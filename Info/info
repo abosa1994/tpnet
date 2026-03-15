@@ -1,0 +1,58 @@
+ 
+// Conversione lat/lon → tile coordinates (standard Web Mercator)
+int lon_to_tile_x(double lon, int zoom) {
+    return static_cast<int>(
+        std::floor((lon + 180.0) / 360.0 * (1 << zoom))
+    );
+}
+
+int lat_to_tile_y(double lat, int zoom) {
+    double lat_rad = lat * M_PI / 180.0;
+    return static_cast<int>(
+        std::floor((1.0 - std::log(std::tan(lat_rad) + 1.0 / std::cos(lat_rad)) / M_PI) / 2.0 * (1 << zoom))
+    );
+}
+```
+
+---
+
+### Architettura v1 Completa
+```
+Client                              Server
+  │                                   │
+  │── GET(lat, lon, zoom) ───────────►│
+  │                                   │ converte lat/lon → tile x/y
+  │                                   │ controlla cache (v3)
+  │                                   │   MISS → fetch da OSM via HTTP
+  │                                   │   HIT  → prende da cache
+  │◄── Response(OK, size) ────────────│
+  │◄── [PNG bytes] ───────────────────│
+  │                                   │
+  │ salva tile_{z}_{x}_{y}.png        │
+```
+
+---
+
+### Cosa Aggiunge Valore al Progetto
+
+Il server fa da **proxy con cache** tra il client e OpenStreetMap — è un pattern reale usato in produzione per ridurre latenza e traffico verso i tile server upstream. Puoi misurare:
+```
+Senza cache:  ogni richiesta → HTTP fetch OSM → 80-200ms
+Con cache:    tile già vista → risposta locale → <1ms
+```
+
+Questo rende i benchmark della LRU cache immediatamente significativi — non stai misurando una struttura dati astratta, stai misurando il risparmio reale su chiamate HTTP.
+
+---
+
+### Struttura del Progetto
+```
+conduit/
+├── client/
+│   └── scarica tile, salva in tiles/{zoom}/{x}/{y}.png
+├── server/
+│   ├── tcp server
+│   ├── lru cache (v3)
+│   └── osm_fetcher  ← fetch HTTP da OpenStreetMap
+└── common/
+    └── protocol (Header, RequestType, lat/lon→tile conversion)

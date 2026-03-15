@@ -1,0 +1,7 @@
+# Scarica estratto Nord Italia da Geofabrik (~500MB)
+wget https://download.geofabrik.de/europe/italy/nord-ovest-latest.osm.pbf
+
+# Avvia tile server locale
+docker run -p 8080:80 \
+  -v ./nord-ovest-latest.osm.pbf:/data/region.osm.pbf \
+  overv/openstreetmap-tile-server import
